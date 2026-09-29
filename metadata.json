@@ -1,0 +1,6 @@
+{
+  "name": "Navigate Your Future",
+  "description": "Personalized B.Tech career & learning platform. Know where you are. Discover where to go next.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
