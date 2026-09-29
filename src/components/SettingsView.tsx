@@ -29,6 +29,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [goal, setGoal] = useState<CareerGoal>(profile.goal);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
+  React.useEffect(() => {
+    setName(profile.name);
+    setEmail(profile.email);
+    setBranch(profile.branch);
+    setYear(profile.year);
+    setGoal(profile.goal);
+  }, [profile]);
+
   const branches: BTechBranch[] = [
     'Computer Science & Engineering',
     'Artificial Intelligence & Machine Learning',
@@ -200,26 +208,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </form>
 
-      {/* Danger Zone / Reset */}
+      {/* Reset Account Progress */}
       <section className="bg-white rounded-2xl border border-rose-200 p-6 sm:p-8 shadow-xs">
         <h3 className="text-base font-bold text-rose-900 mb-1 flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-rose-600" />
-          <span>Reset Demonstration State</span>
+          <span>Reset Account Learning Data</span>
         </h3>
         <p className="text-xs text-slate-600 mb-4">
-          Reset all topics, detected skills, and roadmap stages back to their pristine factory defaults.
+          Reset all curriculum topics, skill gaps, and milestone progress for this account back to the starting state.
         </p>
         <button
           type="button"
           onClick={() => {
-            if (confirm('Reset all demo data back to default Aarav Sharma profile?')) {
+            if (confirm(`Reset all learning progress and resume data for ${profile.name}?`)) {
               onResetData();
             }
           }}
           className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-lg transition-colors flex items-center gap-2"
         >
           <RefreshCcw className="w-3.5 h-3.5" />
-          <span>Reset to Default Demo State</span>
+          <span>Reset My Learning Progress</span>
         </button>
       </section>
     </div>

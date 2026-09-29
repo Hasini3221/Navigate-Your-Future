@@ -16,16 +16,21 @@ import {
   RoadmapNode,
   SkillGapItem,
   StudentProfile,
+  ToastMessage,
 } from './types';
 import {
   ALL_COURSE_TOPICS,
   ALL_PROJECTS,
   BRANCH_DIRECTIONS,
-  INITIAL_DETECTED_SKILLS,
-  INITIAL_ROADMAP,
-  INITIAL_SKILL_GAPS,
-  INITIAL_STUDENT_PROFILE,
 } from './data/learningData';
+import {
+  getCurrentUserRecord,
+  saveUserRecord,
+  logoutUser,
+  generateGoalRoadmap,
+  generateGoalSkillGaps,
+  UserRecord,
+} from './data/userStorage';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { LandingPage } from './components/LandingPage';
@@ -43,27 +48,61 @@ import { TopicDetailModal } from './components/TopicDetailModal';
 import { ProjectDetailModal } from './components/ProjectDetailModal';
 import { ToastContainer } from './components/ToastContainer';
 import { ChatbotWidget } from './components/ChatbotWidget';
-import { ToastMessage } from './types';
+
+const EMPTY_PROFILE: StudentProfile = {
+  id: '',
+  name: '',
+  email: '',
+  branch: 'Computer Science & Engineering',
+  year: '1st Year',
+  goal: "I'm not sure yet",
+  resumeUploaded: false,
+  overallProgress: 0,
+};
 
 export default function App() {
-  // Global States
-  const [isLoggedIn, setIsLoggedIn] = useState(true);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
+  // Load initial authenticated user from persistent storage
+  const [currentUserRecord, setCurrentUserRecord] = useState<UserRecord | null>(() => {
+    return getCurrentUserRecord();
+  });
+
+  const isLoggedIn = currentUserRecord !== null;
+
+  // Active navigation tab
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    return currentUserRecord ? 'dashboard' : 'landing';
+  });
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [authModalConfig, setAuthModalConfig] = useState<{
     isOpen: boolean;
     mode: 'login' | 'signup';
   }>({ isOpen: false, mode: 'signup' });
 
-  // Core Data States
-  const [profile, setProfile] = useState<StudentProfile>(INITIAL_STUDENT_PROFILE);
-  const [detectedSkills, setDetectedSkills] = useState<DetectedSkill[]>(
-    INITIAL_DETECTED_SKILLS
-  );
-  const [skillGaps, setSkillGaps] = useState<SkillGapItem[]>(INITIAL_SKILL_GAPS);
-  const [roadmap, setRoadmap] = useState<RoadmapNode[]>(INITIAL_ROADMAP);
-  const [courseTopics, setCourseTopics] = useState<CourseTopic[]>(ALL_COURSE_TOPICS);
-  const [projects, setProjects] = useState<ProjectItem[]>(ALL_PROJECTS);
+  // Core Data States - initialized strictly from authenticated user record
+  const [profile, setProfile] = useState<StudentProfile>(() => {
+    return currentUserRecord ? currentUserRecord.profile : EMPTY_PROFILE;
+  });
+
+  const [detectedSkills, setDetectedSkills] = useState<DetectedSkill[]>(() => {
+    return currentUserRecord ? currentUserRecord.detectedSkills : [];
+  });
+
+  const [skillGaps, setSkillGaps] = useState<SkillGapItem[]>(() => {
+    return currentUserRecord ? currentUserRecord.skillGaps : [];
+  });
+
+  const [roadmap, setRoadmap] = useState<RoadmapNode[]>(() => {
+    return currentUserRecord ? currentUserRecord.roadmap : [];
+  });
+
+  const [courseTopics, setCourseTopics] = useState<CourseTopic[]>(() => {
+    return currentUserRecord ? currentUserRecord.courseTopics : [];
+  });
+
+  const [projects, setProjects] = useState<ProjectItem[]>(() => {
+    return currentUserRecord ? currentUserRecord.projects : [];
+  });
 
   // Active Modals
   const [activeTopicModal, setActiveTopicModal] = useState<CourseTopic | null>(null);
@@ -84,300 +123,105 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  const handleSwitchPersona = (p: {
-    name: string;
-    email: string;
-    branch: BTechBranch;
-    year: BTechYear;
-    goal: CareerGoal;
-  }) => {
-    setProfile({
-      id: `student-${Date.now()}`,
-      name: p.name,
-      email: p.email,
-      branch: p.branch,
-      year: p.year,
-      goal: p.goal,
-      resumeUploaded: true,
-      resumeFileName: `${p.name.replace(/\s+/g, '_')}_Resume.pdf`,
-      resumeFileSize: '1.4 MB',
-      resumeUploadDate: 'Sep 24, 2026',
-      overallProgress: p.year === '1st Year' ? 22 : p.year === '2nd Year' ? 52 : p.year === '3rd Year' ? 68 : 84,
-    });
-    handleSelectGoal(p.goal);
-    addToast('success', 'Student Switched', `Active profile changed to ${p.name} (${p.branch}, ${p.year}). Roadmap calibrated.`);
-  };
-
-  // Dynamic Overall Progress calculation
+  // Enforce authentication boundary: unauthenticated users cannot access dashboard or internal tabs
   useEffect(() => {
+    if (!isLoggedIn && activeTab !== 'landing') {
+      setActiveTab('landing');
+      setAuthModalConfig({ isOpen: true, mode: 'login' });
+    }
+  }, [isLoggedIn, activeTab]);
+
+  // Compute Overall Progress authentically for the logged-in user
+  useEffect(() => {
+    if (!isLoggedIn || !currentUserRecord) return;
+
     const completedTopicCount = courseTopics.filter(
       (t) => t.completed || t.progress === 100
     ).length;
     const completedGapsCount = skillGaps.filter((g) => g.completed).length;
     const completedProjectsCount = projects.filter((p) => p.completed).length;
 
-    // Weighting: topics 50%, gaps 30%, projects 20%
-    const topicProg = (completedTopicCount / Math.max(courseTopics.length, 1)) * 50;
+    // A brand new user with 0 completed topics, 0 gaps, 0 projects, and no resume has strictly 0%
+    if (
+      completedTopicCount === 0 &&
+      completedGapsCount === 0 &&
+      completedProjectsCount === 0 &&
+      !profile.resumeUploaded
+    ) {
+      if (profile.overallProgress !== 0) {
+        setProfile((prev) => ({ ...prev, overallProgress: 0 }));
+      }
+      return;
+    }
+
+    const topicProg = (completedTopicCount / Math.max(courseTopics.length, 1)) * 40;
     const gapProg = (completedGapsCount / Math.max(skillGaps.length, 1)) * 30;
     const projProg = (completedProjectsCount / Math.max(projects.length, 1)) * 20;
+    const resumeProg = profile.resumeUploaded ? 10 : 0;
 
-    const computed = Math.min(
-      95,
-      Math.max(20, Math.round(topicProg + gapProg + projProg + 25))
+    const computed = Math.min(100, Math.round(topicProg + gapProg + projProg + resumeProg));
+    if (profile.overallProgress !== computed) {
+      setProfile((prev) => ({ ...prev, overallProgress: computed }));
+    }
+  }, [courseTopics, skillGaps, projects, profile.resumeUploaded, isLoggedIn]);
+
+  // Save changes automatically and isolated to this user's persistent record
+  useEffect(() => {
+    if (isLoggedIn && currentUserRecord && profile.id) {
+      const updatedRecord: UserRecord = {
+        account: currentUserRecord.account,
+        profile,
+        detectedSkills,
+        skillGaps,
+        roadmap,
+        courseTopics,
+        projects,
+      };
+      saveUserRecord(updatedRecord);
+    }
+  }, [profile, detectedSkills, skillGaps, roadmap, courseTopics, projects, isLoggedIn]);
+
+  // Handle Authentication (Login / Signup)
+  const handleAuthenticate = (record: UserRecord) => {
+    setCurrentUserRecord(record);
+    setProfile(record.profile);
+    setDetectedSkills(record.detectedSkills);
+    setSkillGaps(record.skillGaps);
+    setRoadmap(record.roadmap);
+    setCourseTopics(record.courseTopics);
+    setProjects(record.projects);
+    setActiveTab('dashboard');
+    addToast(
+      'success',
+      `Welcome, ${record.profile.name}!`,
+      'Your personalized dashboard and learning milestones are ready.'
     );
-    setProfile((prev) => ({ ...prev, overallProgress: computed }));
-  }, [courseTopics, skillGaps, projects]);
+  };
+
+  // Handle Logout (Complete Session Teardown)
+  const handleLogout = () => {
+    logoutUser();
+    setCurrentUserRecord(null);
+    setProfile(EMPTY_PROFILE);
+    setDetectedSkills([]);
+    setSkillGaps([]);
+    setRoadmap([]);
+    setCourseTopics([]);
+    setProjects([]);
+    setActiveTab('landing');
+    setIsSidebarOpen(false);
+    addToast('info', 'Logged Out', 'You have been safely signed out. Your progress is saved.');
+  };
 
   // Recalibrate roadmap when goal changes
   const handleSelectGoal = (newGoal: CareerGoal) => {
+    const updatedRoadmap = generateGoalRoadmap(newGoal);
+    const updatedGaps = generateGoalSkillGaps(newGoal);
+
     setProfile((prev) => ({ ...prev, goal: newGoal }));
-
-    if (newGoal === 'AI / Machine Learning') {
-      setRoadmap([
-        {
-          id: 'aiml-1',
-          title: 'Python & Vectorization',
-          subtitle: 'Syntax, NumPy arrays, vectorized operations',
-          status: 'completed',
-          order: 1,
-          whyThisNext: 'Essential language for model research and computational linear algebra.',
-          keyTopics: ['NumPy Arrays & Broadcasting', 'Vector Operations', 'Memory Layout', 'Functions & Lambdas'],
-          recommendedProject: {
-            title: 'Matrix Vector Computation Engine',
-            difficulty: 'Beginner',
-            skills: ['Python', 'NumPy', 'Math'],
-            description: 'Implement matrix multiplications and convolution filters using pure NumPy vectorization.',
-          },
-          timeEstimate: '2 Weeks · Completed',
-        },
-        {
-          id: 'aiml-2',
-          title: 'Applied Linear Algebra & Statistics',
-          subtitle: 'Eigenvalues, SVD, probability distributions, hypothesis testing',
-          status: 'completed',
-          order: 2,
-          whyThisNext: 'Mathematical backbone for understanding gradient descent, PCA, and loss functions.',
-          keyTopics: ['Eigenvectors & SVD', 'Multivariate Normal Distributions', 'Bayes Theorem', 'Hypothesis Testing'],
-          recommendedProject: {
-            title: 'Principal Component Analysis (PCA) from Scratch',
-            difficulty: 'Intermediate',
-            skills: ['NumPy', 'Linear Algebra', 'Math'],
-            description: 'Dimensionality reduction implementation using eigenvalue decomposition.',
-          },
-          timeEstimate: '3 Weeks · Completed',
-        },
-        {
-          id: 'aiml-3',
-          title: 'Data Wrangling with Pandas & EDA',
-          subtitle: 'DataFrames, missing values, feature pipelines, visualization',
-          status: 'current',
-          order: 3,
-          whyThisNext: '80% of real ML engineering is robust data cleaning, feature extraction, and exploratory analysis.',
-          keyTopics: ['Pandas Groupby & Aggregations', 'Missing Value Imputation', 'Outlier Detection (IQR / Z-score)', 'Seaborn Heatmaps'],
-          recommendedProject: {
-            title: 'Higher Education Engineering Salary EDA',
-            difficulty: 'Intermediate',
-            skills: ['Pandas', 'EDA', 'Matplotlib'],
-            description: 'Comprehensive data analysis on 50,000 graduate salary records with statistical hypothesis testing.',
-          },
-          timeEstimate: '3 Weeks · Current Focus',
-        },
-        {
-          id: 'aiml-4',
-          title: 'Classical Machine Learning',
-          subtitle: 'Regression, Classification, Ensembles, Hyperparameter tuning',
-          status: 'up_next',
-          order: 4,
-          whyThisNext: 'Build strong intuition on baseline models (Random Forests, XGBoost) before diving into deep learning.',
-          keyTopics: ['Linear & Logistic Regression', 'Decision Trees & Ensembles', 'Cross-Validation & Regularization', 'ROC-AUC & F1 Metrics'],
-          recommendedProject: {
-            title: 'Campus Placement Probability Classifier',
-            difficulty: 'Intermediate',
-            skills: ['Scikit-Learn', 'Random Forest', 'Python'],
-            description: 'Ensemble model predicting placement offers with feature importance explanation.',
-          },
-          timeEstimate: '4 Weeks · Up Next',
-        },
-        {
-          id: 'aiml-5',
-          title: 'Deep Learning & Neural Networks',
-          subtitle: 'Backpropagation, PyTorch, CNNs, Transformers basics',
-          status: 'later',
-          order: 5,
-          whyThisNext: 'Enables high-capacity models for computer vision, NLP, and multimodal intelligence.',
-          keyTopics: ['PyTorch Tensors & Autograd', 'Feedforward Networks', 'Convolutional Networks (CNN)', 'Attention Mechanisms'],
-          recommendedProject: {
-            title: 'Satellite Land Cover Classifier with PyTorch',
-            difficulty: 'Advanced',
-            skills: ['PyTorch', 'CNN', 'Computer Vision'],
-            description: 'Train a convolutional neural network on satellite imagery with transfer learning.',
-          },
-          timeEstimate: '5 Weeks · Later',
-        },
-        {
-          id: 'aiml-6',
-          title: 'MLOps & Inference Serving',
-          subtitle: 'FastAPI, Model serialization (ONNX), Docker, Monitoring',
-          status: 'later',
-          order: 6,
-          whyThisNext: 'Prepares you for industry production where models must be hosted with latency SLAs.',
-          keyTopics: ['FastAPI Inference API', 'Model Quantization', 'Docker Containerization', 'Data Drift Detection'],
-          recommendedProject: {
-            title: 'Real-Time Fraud Detection Inference Microservice',
-            difficulty: 'Advanced',
-            skills: ['FastAPI', 'Docker', 'MLOps', 'ONNX'],
-            description: 'Sub-20ms inference API deployed with Docker container and Prometheus health checks.',
-          },
-          timeEstimate: '4 Weeks · Capstone',
-        },
-      ]);
-
-      // Adjust skill gaps for AI/ML
-      setSkillGaps([
-        {
-          id: 'aiml-gap-1',
-          name: 'Applied Linear Algebra & Statistics',
-          category: 'Core Math',
-          currentStatus: 'needs_development',
-          importance: 'Foundational',
-          recommendedStage: 'Current Stage — Immediate Focus',
-          completed: false,
-          whyNeeded: 'Understanding gradient descent, matrix multiplication, and loss optimization.',
-          actionItem: 'Review matrix operations, eigenvalues, and multivariate normal distributions.',
-        },
-        {
-          id: 'aiml-gap-2',
-          name: 'Pandas & Feature Engineering',
-          category: 'Data Science',
-          currentStatus: 'needs_development',
-          importance: 'High',
-          recommendedStage: 'Current Stage — Concurrent',
-          completed: false,
-          whyNeeded: 'Preparing raw engineering datasets for machine learning model ingestion.',
-          actionItem: 'Implement data preprocessing pipelines handling missing values and one-hot encoding.',
-        },
-        {
-          id: 'aiml-gap-3',
-          name: 'Scikit-Learn Modeling & Validation',
-          category: 'Emerging Technologies',
-          currentStatus: 'not_started',
-          importance: 'High',
-          recommendedStage: 'Stage 2 — Up Next',
-          completed: false,
-          whyNeeded: 'Standard library for supervised, unsupervised, and ensemble models.',
-          actionItem: 'Train Random Forest and Gradient Boosting models with 5-fold cross-validation.',
-        },
-        {
-          id: 'aiml-gap-4',
-          name: 'PyTorch Deep Learning',
-          category: 'Emerging Technologies',
-          currentStatus: 'not_started',
-          importance: 'High',
-          recommendedStage: 'Stage 3 — Later',
-          completed: false,
-          whyNeeded: 'State-of-the-art framework for neural networks and transformer architectures.',
-          actionItem: 'Implement a multi-layer perceptron with custom loss and optimizer in PyTorch.',
-        },
-        {
-          id: 'aiml-gap-5',
-          name: 'MLOps & Containerized Serving',
-          category: 'Development',
-          currentStatus: 'not_started',
-          importance: 'High',
-          recommendedStage: 'Stage 4 — Capstone',
-          completed: false,
-          whyNeeded: 'Serving model predictions reliably via REST APIs inside Docker containers.',
-          actionItem: 'Build a FastAPI service serving model predictions with response caching.',
-        },
-      ]);
-    } else if (newGoal === 'Cybersecurity') {
-      setRoadmap([
-        {
-          id: 'cyber-1',
-          title: 'Linux & Networking Fundamentals',
-          subtitle: 'TCP/IP stack, Bash scripting, socket analysis, iptables',
-          status: 'completed',
-          order: 1,
-          whyThisNext: 'Operating systems and network traffic fundamentals are prerequisites for defensive security.',
-          keyTopics: ['OSI 7 Layers vs TCP/IP', 'Wireshark Packet Analysis', 'Linux CLI & Permissions', 'Firewall Configurations'],
-          recommendedProject: {
-            title: 'Network Packet Sniffer & Flow Analyzer',
-            difficulty: 'Beginner',
-            skills: ['Python', 'Sockets', 'Linux'],
-            description: 'Inspect raw network headers and count DNS queries in real time.',
-          },
-          timeEstimate: '3 Weeks · Completed',
-        },
-        {
-          id: 'cyber-2',
-          title: 'Python Scripting for Security',
-          subtitle: 'Automation, Port scanners, Regex, Subnet calculators',
-          status: 'current',
-          order: 2,
-          whyThisNext: 'Allows rapid automation of audits, log parsing, and system vulnerability verification.',
-          keyTopics: ['Scapy Network Library', 'Regex Pattern Matching', 'Socket Programming', 'Automated Subnet Pingers'],
-          recommendedProject: {
-            title: 'Multi-Threaded TCP Port Scanner',
-            difficulty: 'Intermediate',
-            skills: ['Python', 'Sockets', 'Concurrency'],
-            description: 'Scan 1,000 ports on authorized test hosts in under 3 seconds.',
-          },
-          timeEstimate: '3 Weeks · Current Focus',
-        },
-        {
-          id: 'cyber-3',
-          title: 'Applied Cryptography & PKI',
-          subtitle: 'AES, RSA, Public Key Infrastructure, TLS Handshake',
-          status: 'up_next',
-          order: 3,
-          whyThisNext: 'Protects data in transit and at rest; explains certificate verification chains.',
-          keyTopics: ['Symmetric vs Asymmetric Ciphers', 'HMAC & Digital Signatures', 'TLS 1.3 Key Exchange', 'Certificate Authorities (CA)'],
-          recommendedProject: {
-            title: 'End-to-End Encrypted File Vault',
-            difficulty: 'Intermediate',
-            skills: ['Python / Cryptography', 'AES-256', 'RSA'],
-            description: 'Zero-knowledge local encrypted file store with salted PBKDF2 key derivation.',
-          },
-          timeEstimate: '3 Weeks · Up Next',
-        },
-        {
-          id: 'cyber-4',
-          title: 'OWASP Top 10 Web Security',
-          subtitle: 'SQLi, XSS, CSRF, SSRF, Broken Access Control mitigation',
-          status: 'later',
-          order: 4,
-          whyThisNext: 'Most security breaches exploit application-layer web vulnerabilities.',
-          keyTopics: ['SQL Injection Remediation', 'Cross-Site Scripting (XSS) CSP Headers', 'CSRF Tokens & SameSite', 'Broken Object Level Auth (BOLA)'],
-          recommendedProject: {
-            title: 'Vulnerability Audit Lab & Mitigation Suite',
-            difficulty: 'Advanced',
-            skills: ['Cybersecurity', 'Python', 'OWASP', 'Burp Suite'],
-            description: 'Demonstrate detection and patched code fixes for 5 high-severity web flaws.',
-          },
-          timeEstimate: '4 Weeks · Later',
-        },
-        {
-          id: 'cyber-5',
-          title: 'Security Operations & Incident Response',
-          subtitle: 'SIEM (Splunk/ELK), Log analysis, Threat hunting, SOC playbooks',
-          status: 'later',
-          order: 5,
-          whyThisNext: 'Aligns directly with entry-level Security Analyst and SOC roles.',
-          keyTopics: ['Log Ingestion & Parsing', 'Correlation Rules', 'Incident Response Playbooks', 'MITRE ATT&CK Framework'],
-          recommendedProject: {
-            title: 'Simulated SOC SIEM Incident Dashboard',
-            difficulty: 'Advanced',
-            skills: ['SIEM', 'Log Analysis', 'Linux'],
-            description: 'Ingest Apache/Nginx authentication logs and generate alerts on brute-force attempts.',
-          },
-          timeEstimate: '4 Weeks · Capstone',
-        },
-      ]);
-    } else {
-      // Default to Software Development
-      setRoadmap(INITIAL_ROADMAP);
-      setSkillGaps(INITIAL_SKILL_GAPS);
-    }
+    setRoadmap(updatedRoadmap);
+    setSkillGaps(updatedGaps);
+    addToast('info', 'Goal Updated', `Your trajectory has been calibrated for ${newGoal}.`);
   };
 
   const handleToggleGapCompletion = (gapId: string) => {
@@ -454,14 +298,29 @@ export default function App() {
     );
   };
 
+  // Reset current logged in user's data back to initial 0% state
   const handleResetData = () => {
-    setProfile(INITIAL_STUDENT_PROFILE);
-    setDetectedSkills(INITIAL_DETECTED_SKILLS);
-    setSkillGaps(INITIAL_SKILL_GAPS);
-    setRoadmap(INITIAL_ROADMAP);
-    setCourseTopics(ALL_COURSE_TOPICS);
-    setProjects(ALL_PROJECTS);
-    addToast('info', 'Demo State Reset', 'Restored pristine Aarav Sharma demo profile.');
+    if (!currentUserRecord) return;
+
+    const freshRoadmap = generateGoalRoadmap(profile.goal);
+    const freshGaps = generateGoalSkillGaps(profile.goal);
+    const freshTopics = ALL_COURSE_TOPICS.map((t) => ({ ...t, progress: 0, completed: false }));
+    const freshProjects = ALL_PROJECTS.map((p) => ({ ...p, completed: false }));
+
+    setProfile((prev) => ({
+      ...prev,
+      resumeUploaded: false,
+      resumeFileName: undefined,
+      resumeFileSize: undefined,
+      resumeUploadDate: undefined,
+      overallProgress: 0,
+    }));
+    setDetectedSkills([]);
+    setSkillGaps(freshGaps);
+    setRoadmap(freshRoadmap);
+    setCourseTopics(freshTopics);
+    setProjects(freshProjects);
+    addToast('info', 'Learning Data Reset', 'Your account learning progress has been reset.');
   };
 
   const handleOpenTopicBySkillName = (skillName: string) => {
@@ -470,26 +329,23 @@ export default function App() {
         t.title.toLowerCase().includes(skillName.toLowerCase()) ||
         skillName.toLowerCase().includes(t.title.toLowerCase())
       ) || courseTopics[0];
-    setActiveTopicModal(matched);
+    if (matched) {
+      setActiveTopicModal(matched);
+    }
   };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
-      {/* 1. Universal Top Bar */}
+      {/* 1. Universal Top Navigation Bar */}
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         profile={profile}
         isLoggedIn={isLoggedIn}
         onOpenAuth={(mode) => setAuthModalConfig({ isOpen: true, mode })}
-        onLogout={() => {
-          setIsLoggedIn(false);
-          setActiveTab('landing');
-          addToast('info', 'Logged Out', 'You have returned to the overview landing page.');
-        }}
+        onLogout={handleLogout}
         isSidebarOpen={isSidebarOpen}
         setIsSidebarOpen={setIsSidebarOpen}
-        onSwitchPersona={handleSwitchPersona}
       />
 
       {/* 2. Main Viewport & Collapsible Navigation Shell */}
@@ -502,10 +358,7 @@ export default function App() {
             activeTab={activeTab}
             setActiveTab={setActiveTab}
             profile={profile}
-            onLogout={() => {
-              setIsLoggedIn(false);
-              setActiveTab('landing');
-            }}
+            onLogout={handleLogout}
           />
         )}
 
@@ -515,28 +368,30 @@ export default function App() {
             isLoggedIn && activeTab !== 'landing' ? 'lg:pl-64' : ''
           }`}
         >
-          {/* Landing Page */}
+          {/* Landing Page (Shown when logged out, or if visitor navigates to overview) */}
           {(!isLoggedIn || activeTab === 'landing') && (
             <LandingPage
               onGetStarted={() => {
-                setIsLoggedIn(true);
-                setActiveTab('dashboard');
+                if (isLoggedIn) {
+                  setActiveTab('dashboard');
+                } else {
+                  setAuthModalConfig({ isOpen: true, mode: 'signup' });
+                }
               }}
               onLogin={() => setAuthModalConfig({ isOpen: true, mode: 'login' })}
-              onSelectBranchDemo={(b, g) => {
-                setProfile((prev) => ({
-                  ...prev,
-                  branch: b,
-                  goal: g,
-                }));
-                handleSelectGoal(g);
-                setIsLoggedIn(true);
-                setActiveTab('dashboard');
+              onSelectBranchDemo={(branch, goal) => {
+                if (isLoggedIn) {
+                  setProfile((prev) => ({ ...prev, branch, goal }));
+                  handleSelectGoal(goal);
+                  setActiveTab('dashboard');
+                } else {
+                  setAuthModalConfig({ isOpen: true, mode: 'signup' });
+                }
               }}
             />
           )}
 
-          {/* Student Dashboard */}
+          {/* Student Dashboard (Dynamic for authenticated user) */}
           {isLoggedIn && activeTab === 'dashboard' && (
             <DashboardView
               profile={profile}
@@ -560,6 +415,7 @@ export default function App() {
                 setProfile((prev) => ({ ...prev, ...updated }))
               }
               onNavigateToGaps={() => setActiveTab('skill-gap')}
+              onUpdateSkillGaps={setSkillGaps}
             />
           )}
 
@@ -650,7 +506,7 @@ export default function App() {
               profile={profile}
               onUpdateProfile={(updated) => {
                 setProfile((prev) => ({ ...prev, ...updated }));
-                if (updated.goal) {
+                if (updated.goal && updated.goal !== profile.goal) {
                   handleSelectGoal(updated.goal);
                 }
               }}
@@ -665,11 +521,7 @@ export default function App() {
         isOpen={authModalConfig.isOpen}
         initialMode={authModalConfig.mode}
         onClose={() => setAuthModalConfig({ isOpen: false, mode: 'signup' })}
-        onAuthenticate={(authProfile) => {
-          setProfile(authProfile);
-          setIsLoggedIn(true);
-          setActiveTab('dashboard');
-        }}
+        onAuthenticate={handleAuthenticate}
       />
 
       <TopicDetailModal
@@ -687,7 +539,7 @@ export default function App() {
       {/* 4. Global Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
-      {/* 5. Live AI Career Chatbot Agent */}
+      {/* 5. Live AI Career Chatbot Agent (Isolated to active student profile) */}
       <ChatbotWidget profile={profile} />
     </div>
   );

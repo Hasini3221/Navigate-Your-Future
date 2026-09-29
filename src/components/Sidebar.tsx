@@ -118,11 +118,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="p-4 border-b border-slate-100 bg-slate-50/70">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white font-bold flex items-center justify-center shadow-xs text-sm">
-              {profile.name.charAt(0)}
+              {profile.name ? profile.name.charAt(0).toUpperCase() : 'U'}
             </div>
             <div className="flex-1 min-w-0">
               <h2 className="text-sm font-semibold text-slate-900 truncate">
-                {profile.name}
+                {profile.name || 'Student User'}
               </h2>
               <p className="text-xs text-slate-500 truncate">
                 {profile.branch}

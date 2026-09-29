@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
-import { X, Compass, CheckCircle2, ArrowRight, UserCheck } from 'lucide-react';
-import { BTechBranch, BTechYear, CareerGoal, StudentProfile } from '../types';
+import React, { useState, useEffect } from 'react';
+import { X, Compass, CheckCircle2, ArrowRight, UserCheck, Lock, Mail, User, AlertCircle } from 'lucide-react';
+import { BTechBranch, BTechYear, CareerGoal } from '../types';
+import { loginUser, registerUser, seedDemoAccount, UserRecord } from '../data/userStorage';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialMode: 'login' | 'signup';
-  onAuthenticate: (profile: StudentProfile) => void;
+  onAuthenticate: (record: UserRecord) => void;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -17,16 +18,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 }) => {
   const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
 
-  // Form states
-  const [fullName, setFullName] = useState('Aarav Sharma');
-  const [email, setEmail] = useState('aarav.sharma@btech.edu');
-  const [password, setPassword] = useState('password123');
-  const [confirmPassword, setConfirmPassword] = useState('password123');
+  // Form states - completely blank for real new users
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [branch, setBranch] = useState<BTechBranch>('Computer Science & Engineering');
-  const [year, setYear] = useState<BTechYear>('2nd Year');
-  const [careerInterest, setCareerInterest] = useState<CareerGoal>('Software Development');
+  const [year, setYear] = useState<BTechYear>('1st Year');
+  const [careerInterest, setCareerInterest] = useState<CareerGoal>("I'm not sure yet");
   const [rememberMe, setRememberMe] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => {
+    setMode(initialMode);
+    setErrorMessage('');
+  }, [initialMode, isOpen]);
 
   if (!isOpen) return null;
 
@@ -35,69 +41,67 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMessage('');
 
     if (mode === 'signup') {
-      if (!fullName.trim() || !email.trim() || !password) {
-        setErrorMessage('Please fill in all required fields.');
+      if (!fullName.trim()) {
+        setErrorMessage('Please enter your full name.');
+        return;
+      }
+      if (!email.trim() || !email.includes('@')) {
+        setErrorMessage('Please enter a valid student email address.');
+        return;
+      }
+      if (!password || password.length < 4) {
+        setErrorMessage('Password must be at least 4 characters long.');
         return;
       }
       if (password !== confirmPassword) {
         setErrorMessage('Passwords do not match.');
         return;
       }
+
+      const result = registerUser({
+        name: fullName,
+        email: email,
+        password: password,
+        branch,
+        year,
+        goal: careerInterest,
+      });
+
+      if (!result.success || !result.record) {
+        setErrorMessage(result.error || 'Failed to create account.');
+        return;
+      }
+
+      onAuthenticate(result.record);
+      onClose();
     } else {
       if (!email.trim() || !password) {
         setErrorMessage('Please enter both email and password.');
         return;
       }
+
+      const result = loginUser(email, password);
+
+      if (!result.success || !result.record) {
+        setErrorMessage(result.error || 'Login failed.');
+        return;
+      }
+
+      onAuthenticate(result.record);
+      onClose();
     }
-
-    // Realistic authenticated profile
-    const profile: StudentProfile = {
-      id: `student-${Date.now()}`,
-      name: fullName || 'Aarav Sharma',
-      email: email || 'aarav.sharma@btech.edu',
-      branch,
-      year,
-      goal: careerInterest,
-      resumeUploaded: true,
-      resumeFileName: `${(fullName || 'Aarav').replace(/\s+/g, '_')}_Resume.pdf`,
-      resumeFileSize: '1.4 MB',
-      resumeUploadDate: 'Sep 24, 2026',
-      overallProgress: 52,
-    };
-
-    onAuthenticate(profile);
-    onClose();
   };
 
-  const loadPreset = (
+  const handleQuickDemoLogin = (
     name: string,
     mail: string,
     b: BTechBranch,
     y: BTechYear,
-    g: CareerGoal
+    g: CareerGoal,
+    progress: number
   ) => {
-    setFullName(name);
-    setEmail(mail);
-    setBranch(b);
-    setYear(y);
-    setCareerInterest(g);
-    setPassword('password123');
-    setConfirmPassword('password123');
-
-    const profile: StudentProfile = {
-      id: `student-${Date.now()}`,
-      name,
-      email: mail,
-      branch: b,
-      year: y,
-      goal: g,
-      resumeUploaded: true,
-      resumeFileName: `${name.replace(/\s+/g, '_')}_Resume.pdf`,
-      resumeFileSize: '1.4 MB',
-      resumeUploadDate: 'Sep 24, 2026',
-      overallProgress: y === '1st Year' ? 18 : y === '2nd Year' ? 52 : y === '3rd Year' ? 68 : 84,
-    };
-    onAuthenticate(profile);
+    const record = seedDemoAccount(name, mail, b, y, g, progress);
+    onAuthenticate(record);
     onClose();
   };
 
@@ -130,8 +134,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs overflow-y-auto">
-      <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden my-8">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+      <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-8">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/70">
           <div className="flex items-center gap-2">
@@ -165,7 +169,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            Create Account (Sign Up)
+            Create Account (New User)
           </button>
           <button
             type="button"
@@ -183,57 +187,63 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </button>
         </div>
 
-        {/* Quick Demo Pre-fill Bar */}
-        <div className="p-3 bg-indigo-50/60 border-b border-indigo-100 text-xs text-indigo-900 flex flex-wrap items-center justify-between gap-2">
-          <span className="font-semibold flex items-center gap-1.5 text-[11px]">
-            <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
-            Quick Test Accounts:
-          </span>
+        {/* Quick Demo Accounts for Grading / Evaluators */}
+        <div className="p-3 bg-indigo-50/70 border-b border-indigo-100 text-xs text-indigo-950">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="font-semibold flex items-center gap-1.5 text-[11px] text-indigo-900">
+              <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
+              Quick Test Demo Accounts:
+            </span>
+            <span className="text-[10px] text-slate-500">1-click login</span>
+          </div>
           <div className="flex flex-wrap gap-1.5">
             <button
               type="button"
               onClick={() =>
-                loadPreset(
+                handleQuickDemoLogin(
                   'Aarav Sharma',
-                  'aarav.sharma@btech.edu',
+                  'demo_aarav@btech.edu',
                   'Computer Science & Engineering',
                   '2nd Year',
-                  'Software Development'
+                  'Software Development',
+                  52
                 )
               }
-              className="px-2 py-0.5 bg-white hover:bg-indigo-100 border border-indigo-200 rounded text-[11px] font-medium text-indigo-700 transition-colors"
+              className="px-2 py-1 bg-white hover:bg-indigo-100 border border-indigo-200 rounded-md text-[11px] font-medium text-indigo-700 transition-colors shadow-2xs"
             >
-              CSE 2nd Yr (Aarav)
+              Demo: CSE (Aarav)
             </button>
             <button
               type="button"
               onClick={() =>
-                loadPreset(
+                handleQuickDemoLogin(
                   'Priya Patel',
-                  'priya.patel@btech.edu',
+                  'demo_priya@btech.edu',
                   'Artificial Intelligence & Machine Learning',
                   '3rd Year',
-                  'AI / Machine Learning'
+                  'AI / Machine Learning',
+                  68
                 )
               }
-              className="px-2 py-0.5 bg-white hover:bg-indigo-100 border border-indigo-200 rounded text-[11px] font-medium text-indigo-700 transition-colors"
+              className="px-2 py-1 bg-white hover:bg-indigo-100 border border-indigo-200 rounded-md text-[11px] font-medium text-indigo-700 transition-colors shadow-2xs"
             >
-              AI/ML 3rd Yr (Priya)
+              Demo: AI/ML (Priya)
             </button>
             <button
               type="button"
               onClick={() =>
-                loadPreset(
+                handleQuickDemoLogin(
                   'Rohan Verma',
-                  'rohan.verma@btech.edu',
+                  'demo_rohan@btech.edu',
                   'Information Technology',
                   '1st Year',
-                  "I'm not sure yet"
+                  "I'm not sure yet",
+                  0
                 )
               }
-              className="px-2 py-0.5 bg-white hover:bg-indigo-100 border border-indigo-200 rounded text-[11px] font-medium text-indigo-700 transition-colors"
+              className="px-2 py-1 bg-white hover:bg-indigo-100 border border-indigo-200 rounded-md text-[11px] font-medium text-indigo-700 transition-colors shadow-2xs"
             >
-              1st Yr Undecided
+              Demo: 1st Yr (Rohan)
             </button>
           </div>
         </div>
@@ -241,8 +251,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
           {errorMessage && (
-            <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-lg">
-              {errorMessage}
+            <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-800 rounded-xl flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <span>{errorMessage}</span>
             </div>
           )}
 
@@ -251,67 +262,79 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {/* Full Name */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Full Name
+                  Full Name <span className="text-rose-500">*</span>
                 </label>
-                <input
-                  type="text"
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="e.g. Aarav Sharma"
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
+                <div className="relative">
+                  <User className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    required
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Enter your real full name"
+                    className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
               </div>
 
               {/* Email */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Email
+                  Student Email <span className="text-rose-500">*</span>
                 </label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="student@btech.edu"
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="your.name@college.edu"
+                    className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
               </div>
 
               {/* Password & Confirm */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Password
+                    Password <span className="text-rose-500">*</span>
                   </label>
-                  <input
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                  />
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                    <input
+                      type="password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Confirm Password
+                    Confirm Password <span className="text-rose-500">*</span>
                   </label>
-                  <input
-                    type="password"
-                    required
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                  />
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                    <input
+                      type="password"
+                      required
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
                 </div>
               </div>
 
               {/* B.Tech Branch */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  B.Tech Branch
+                  B.Tech Branch / Department
                 </label>
                 <select
                   value={branch}
@@ -347,7 +370,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Career Interest
+                    Target Career Goal
                   </label>
                   <select
                     value={careerInterest}
@@ -367,14 +390,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 type="submit"
                 className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 mt-2"
               >
-                <span>Create Account</span>
+                <span>Create Personalized Account</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
 
               <div className="text-center pt-2">
                 <button
                   type="button"
-                  onClick={() => setMode('login')}
+                  onClick={() => {
+                    setMode('login');
+                    setErrorMessage('');
+                  }}
                   className="text-xs text-slate-600 hover:text-indigo-600 transition-colors"
                 >
                   Already have an account? <span className="font-semibold text-indigo-600 underline">Login</span>
@@ -386,16 +412,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {/* Email */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Email
+                  Email Address
                 </label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="student@btech.edu"
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="student@college.edu"
+                    className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
               </div>
 
               {/* Password */}
@@ -404,25 +433,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <label className="text-xs font-semibold text-slate-700">
                     Password
                   </label>
-                  <a
-                    href="#forgot"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      alert('Password reset link simulated: check student mailbox.');
-                    }}
-                    className="text-xs text-indigo-600 hover:underline"
-                  >
-                    Forgot password?
-                  </a>
                 </div>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
               </div>
 
               {/* Remember me */}
@@ -435,7 +457,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
                 />
                 <label htmlFor="rememberMe" className="text-xs text-slate-600">
-                  Remember me on this browser
+                  Stay signed in on this device
                 </label>
               </div>
 
@@ -443,14 +465,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 type="submit"
                 className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 mt-2"
               >
-                <span>Login</span>
+                <span>Log In to Dashboard</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
 
               <div className="text-center pt-2">
                 <button
                   type="button"
-                  onClick={() => setMode('signup')}
+                  onClick={() => {
+                    setMode('signup');
+                    setErrorMessage('');
+                  }}
                   className="text-xs text-slate-600 hover:text-indigo-600 transition-colors"
                 >
                   Don't have an account? <span className="font-semibold text-indigo-600 underline">Sign Up</span>

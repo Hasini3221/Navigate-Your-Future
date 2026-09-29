@@ -9,11 +9,10 @@ import {
   Upload,
   CheckCircle2,
   Clock,
-  ExternalLink,
   Sparkles,
-  Target,
   ChevronRight,
-  TrendingUp,
+  Target,
+  PlusCircle,
 } from 'lucide-react';
 import {
   ActiveTab,
@@ -29,7 +28,7 @@ interface DashboardViewProps {
   roadmap: RoadmapNode[];
   continueTopics: CourseTopic[];
   skills: DetectedSkill[];
-  recommendedProject: ProjectItem;
+  recommendedProject?: ProjectItem;
   setActiveTab: (tab: ActiveTab) => void;
   onOpenTopic: (topic: CourseTopic) => void;
   onOpenProject: (project: ProjectItem) => void;
@@ -46,10 +45,63 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenProject,
 }) => {
   // Find current node in roadmap
-  const currentNode = roadmap.find((r) => r.status === 'current') || roadmap[2] || roadmap[0];
+  const currentNode =
+    roadmap.find((r) => r.status === 'current') ||
+    roadmap.find((r) => r.status === 'up_next') ||
+    roadmap[0];
+
+  const upNextNode =
+    roadmap.find((r) => r.status === 'up_next') ||
+    roadmap[1] ||
+    currentNode;
+
+  // New user condition
+  const isNewUser = profile.overallProgress === 0 && !profile.resumeUploaded && skills.length === 0;
+
+  // Project fallback
+  const activeProject = recommendedProject || {
+    id: 'proj-default',
+    title: `${profile.goal} Capstone Project`,
+    branch: profile.branch,
+    difficulty: 'Beginner',
+    skills: skills.length > 0 ? skills.slice(0, 3).map((s) => s.name) : ['Core CS', 'Git', 'CLI'],
+    summary: 'Build a practical, portfolio-ready project demonstrating your foundational engineering knowledge.',
+    fullDescription: '',
+    deliverables: [],
+    resumeBulletExample: '',
+    tags: ['Portfolio'],
+    completed: false,
+  };
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* 0. New User Friendly Welcome Banner (Requirement 3) */}
+      {isNewUser && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-indigo-50 via-white to-indigo-50/50 border border-indigo-200 text-indigo-950 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="font-bold text-sm sm:text-base text-indigo-950">
+                Welcome, {profile.name}! Complete your profile to personalize your learning journey.
+              </h2>
+              <p className="text-xs text-indigo-800 mt-1 max-w-2xl leading-relaxed">
+                Upload your resume or syllabus in the Resume tab to detect your current engineering skills and discover your exact placement gaps.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab('resume')}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl transition-colors shrink-0 shadow-xs self-start sm:self-auto"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Upload Resume Now</span>
+          </button>
+        </div>
+      )}
+
       {/* 1. Dashboard Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-slate-200">
         <div>
@@ -120,7 +172,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Overall Learning Progress
             </div>
             <div className="text-xs text-slate-600 mt-1 leading-tight">
-              «You're making steady progress toward your current goal.»
+              {profile.overallProgress === 0
+                ? '«Get started by completing foundational topics or uploading your resume.»'
+                : '«You are making steady progress toward your current goal.»'}
             </div>
           </div>
         </div>
@@ -128,7 +182,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* 2. Most Prominent Dashboard Card: 🧭 My Direction */}
       <section className="bg-gradient-to-br from-indigo-900 via-indigo-800 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-lg relative overflow-hidden">
-        {/* Subtle decorative grid/glow */}
+        {/* Subtle decorative glow */}
         <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="relative z-10">
@@ -157,47 +211,46 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </button>
           </div>
 
-          {/* Sequential Path */}
+          {/* Dynamic Sequential Path */}
           <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 sm:p-5 border border-white/10 mb-6">
             <div className="text-xs text-indigo-200 mb-3 font-medium">
-              Goal Road: Java → OOP → DSA → SQL → Git/GitHub → Backend → Projects
+              Goal Road:{' '}
+              {roadmap.length > 0
+                ? roadmap.map((n) => n.title.split(' ')[0]).join(' → ')
+                : 'Foundations → Core Skills → Projects'}
             </div>
 
-            {/* Micro visual stepper */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
-              {[
-                { title: 'Java', state: 'done' },
-                { title: 'OOP', state: 'done' },
-                { title: 'DSA', state: 'active' },
-                { title: 'SQL', state: 'next' },
-                { title: 'Git/GitHub', state: 'next' },
-                { title: 'Backend', state: 'later' },
-                { title: 'Projects', state: 'later' },
-              ].map((step) => (
-                <div
-                  key={step.title}
-                  className={`p-2.5 rounded-xl border text-center transition-all ${
-                    step.state === 'active'
-                      ? 'bg-white text-indigo-950 font-bold border-white shadow-md ring-2 ring-indigo-400'
-                      : step.state === 'done'
-                      ? 'bg-white/15 text-indigo-100 border-white/10'
-                      : 'bg-black/15 text-indigo-300/70 border-white/5'
-                  }`}
-                >
-                  <div className="text-[10px] uppercase font-mono tracking-wider mb-0.5 opacity-80">
-                    {step.state === 'active'
-                      ? '● You Are Here'
-                      : step.state === 'done'
-                      ? '✓ Complete'
-                      : 'Step'}
+            {/* Dynamic visual stepper */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-7 gap-2">
+              {roadmap.slice(0, 7).map((step) => {
+                const isActive = step.status === 'current';
+                const isDone = step.status === 'completed';
+                return (
+                  <div
+                    key={step.id}
+                    className={`p-2.5 rounded-xl border text-center transition-all ${
+                      isActive
+                        ? 'bg-white text-indigo-950 font-bold border-white shadow-md ring-2 ring-indigo-400'
+                        : isDone
+                        ? 'bg-white/15 text-indigo-100 border-white/10'
+                        : 'bg-black/15 text-indigo-300/70 border-white/5'
+                    }`}
+                  >
+                    <div className="text-[10px] uppercase font-mono tracking-wider mb-0.5 opacity-80">
+                      {isActive
+                        ? '● You Are Here'
+                        : isDone
+                        ? '✓ Complete'
+                        : 'Step'}
+                    </div>
+                    <div className="text-xs truncate">{step.title}</div>
                   </div>
-                  <div className="text-xs truncate">{step.title}</div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
-          {/* Current Stage and Next Step banner */}
+          {/* Dynamic Current Stage and Next Step banner */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
             <div className="bg-black/20 rounded-xl p-3.5 border border-white/10 flex items-start gap-3">
               <span className="p-1 rounded bg-indigo-500/20 text-indigo-300 font-mono text-[11px] font-bold">
@@ -208,10 +261,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   Current Stage
                 </span>
                 <span className="text-sm font-semibold text-white">
-                  {currentNode.title}
+                  {currentNode?.title || 'Foundations'}
                 </span>
                 <p className="text-indigo-200/90 text-xs mt-0.5">
-                  {currentNode.subtitle}
+                  {currentNode?.subtitle || 'Master the essential building blocks'}
                 </p>
               </div>
             </div>
@@ -223,10 +276,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div>
                 <span className="text-indigo-300 font-medium block">Next Step</span>
                 <span className="text-sm font-semibold text-white">
-                  Arrays & Strings Algorithms
+                  {currentNode?.keyTopics?.[0] || upNextNode?.title || 'Core Problem Solving'}
                 </span>
                 <p className="text-indigo-200/90 text-xs mt-0.5">
-                  Practice two-pointer patterns before advancing to trees & graphs.
+                  {currentNode?.whyThisNext || 'Directly prepares you for the next milestone.'}
                 </p>
               </div>
             </div>
@@ -236,7 +289,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* 3. Dashboard Multi-Card Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Card 1: 📄 Resume */}
+        {/* Card 1: 📄 Resume Intelligence */}
         <div className="bg-white rounded-2xl border border-slate-200 p-6 flex flex-col justify-between shadow-xs">
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -261,12 +314,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </span>
                 </div>
                 <div className="text-[11px] text-slate-500 mt-1 pl-6">
-                  {profile.resumeFileSize} · Uploaded {profile.resumeUploadDate}
+                  {profile.resumeFileSize || '1.4 MB'} · Uploaded {profile.resumeUploadDate || 'Recently'}
                 </div>
               </div>
             ) : (
               <div className="mt-3 p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-xs text-amber-800">
-                Upload your resume to discover your current skills and missing gaps.
+                Upload your resume to discover your demonstrated skills and missing gaps.
               </div>
             )}
           </div>
@@ -300,7 +353,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab('resume')}
-                className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 shadow-xs"
               >
                 <Upload className="w-4 h-4" />
                 <span>Upload Resume</span>
@@ -309,7 +362,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Card 2: 📊 Skill Snapshot */}
+        {/* Card 2: 📊 Dynamic Skill Snapshot */}
         <div className="bg-white rounded-2xl border border-slate-200 p-6 flex flex-col justify-between shadow-xs">
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -325,38 +378,49 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Skill Snapshot
             </h3>
             <p className="text-xs text-slate-500 mb-4">
-              Real-time competency estimates for your selected track:
+              Competency estimates for your selected track ({profile.goal}):
             </p>
 
-            {/* List of skills */}
+            {/* Dynamic List of skills */}
             <div className="space-y-3">
-              {[
-                { name: 'Java', score: 70 },
-                { name: 'DSA', score: 35 },
-                { name: 'SQL', score: 50 },
-                { name: 'Git/GitHub', score: 20 },
-              ].map((item) => (
-                <div key={item.name}>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="font-medium text-slate-800">{item.name}</span>
-                    <span className="font-mono text-slate-600 tabular-nums">
-                      {item.score}%
-                    </span>
+              {skills.length > 0 ? (
+                skills.slice(0, 4).map((item) => (
+                  <div key={item.id || item.name}>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="font-medium text-slate-800">{item.name}</span>
+                      <span className="font-mono text-slate-600 tabular-nums">
+                        {item.proficiencyScore}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          item.proficiencyScore >= 60
+                            ? 'bg-emerald-500'
+                            : item.proficiencyScore >= 30
+                            ? 'bg-indigo-500'
+                            : 'bg-amber-500'
+                        }`}
+                        style={{ width: `${item.proficiencyScore}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        item.score >= 60
-                          ? 'bg-emerald-500'
-                          : item.score >= 30
-                          ? 'bg-indigo-500'
-                          : 'bg-amber-500'
-                      }`}
-                      style={{ width: `${item.score}%` }}
-                    />
-                  </div>
+                ))
+              ) : (
+                <div className="py-4 text-center">
+                  <p className="text-xs text-slate-500 mb-3">
+                    No skills recorded yet. Scan your resume or add coursework skills.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('resume')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-lg transition-colors border border-indigo-200"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5" />
+                    <span>Scan or Add Skills</span>
+                  </button>
                 </div>
-              ))}
+              )}
             </div>
           </div>
 
@@ -372,7 +436,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Card 3: 🚀 Recommended Project */}
+        {/* Card 3: 🚀 Milestone / Recommended Project */}
         <div className="bg-white rounded-2xl border border-slate-200 p-6 flex flex-col justify-between shadow-xs">
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -385,27 +449,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
 
             <h3 className="text-base font-bold text-slate-900 mb-1">
-              {recommendedProject.title}
+              {activeProject.title}
             </h3>
 
             <div className="text-xs text-slate-500 mb-3">
-              Difficulty: <span className="font-semibold text-slate-700">Beginner → Intermediate</span>
+              Difficulty:{' '}
+              <span className="font-semibold text-slate-700">
+                {activeProject.difficulty}
+              </span>
             </div>
 
             <p className="text-xs text-slate-600 line-clamp-3 leading-relaxed mb-4">
-              {recommendedProject.summary}
+              {activeProject.summary}
             </p>
 
             <div className="text-xs text-slate-600 mb-2">
               <span className="font-semibold text-slate-700">Skills applied: </span>
-              <span>{recommendedProject.skills.join(' • ')}</span>
+              <span>{activeProject.skills.join(' • ')}</span>
             </div>
           </div>
 
           <div className="mt-6 pt-4 border-t border-slate-100">
             <button
               type="button"
-              onClick={() => onOpenProject(recommendedProject)}
+              onClick={() => onOpenProject(activeProject)}
               className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 shadow-xs"
             >
               <span>Explore Project</span>

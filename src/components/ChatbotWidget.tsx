@@ -38,16 +38,19 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({ profile }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const chatStorageKey = profile.id ? `nyf_chat_messages_${profile.id}` : 'nyf_chat_messages_guest';
+  const sessionStorageKey = profile.id ? `nyf_chat_session_${profile.id}` : 'nyf_chat_session_guest';
+
   const [sessionId, setSessionId] = useState<string>(() => {
-    const saved = localStorage.getItem('nyf_chat_session_id');
+    const saved = localStorage.getItem(sessionStorageKey);
     if (saved) return saved;
     const generated = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-    localStorage.setItem('nyf_chat_session_id', generated);
+    localStorage.setItem(sessionStorageKey, generated);
     return generated;
   });
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    const saved = localStorage.getItem('nyf_chat_messages');
+    const saved = localStorage.getItem(chatStorageKey);
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -59,19 +62,49 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({ profile }) => {
       {
         id: 'msg-welcome',
         sender: 'assistant',
-        text: `Hello ${profile.name}! 👋 I am your **AI Career & Learning Advisor** for **Navigate Your Future**.\n\nI can help you audit your technical skills, optimize your resume, decide what to study next for **${profile.goal}**, or navigate your **${profile.branch}** coursework.\n\nHow can I help you today?`,
+        text: `Hello ${profile.name || 'there'}! 👋 I am your **AI Career & Learning Advisor** for **Navigate Your Future**.\n\nI can help you audit your technical skills, optimize your resume, decide what to study next for **${profile.goal}**, or navigate your **${profile.branch}** coursework.\n\nHow can I help you today?`,
         timestamp: 'Just now',
       },
     ];
   });
+
+  // Reload chat when student profile changes
+  useEffect(() => {
+    const savedSession = localStorage.getItem(sessionStorageKey);
+    if (savedSession) {
+      setSessionId(savedSession);
+    } else {
+      const generated = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      setSessionId(generated);
+      localStorage.setItem(sessionStorageKey, generated);
+    }
+
+    const saved = localStorage.getItem(chatStorageKey);
+    if (saved) {
+      try {
+        setMessages(JSON.parse(saved));
+        return;
+      } catch {
+        // fallback
+      }
+    }
+    setMessages([
+      {
+        id: `msg-welcome-${Date.now()}`,
+        sender: 'assistant',
+        text: `Hello ${profile.name || 'there'}! 👋 I am your **AI Career & Learning Advisor** for **Navigate Your Future**.\n\nI can help you audit your technical skills, optimize your resume, decide what to study next for **${profile.goal}**, or navigate your **${profile.branch}** coursework.\n\nHow can I help you today?`,
+        timestamp: 'Just now',
+      },
+    ]);
+  }, [profile.id]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Sync messages to localStorage
   useEffect(() => {
-    localStorage.setItem('nyf_chat_messages', JSON.stringify(messages));
-  }, [messages]);
+    localStorage.setItem(chatStorageKey, JSON.stringify(messages));
+  }, [messages, chatStorageKey]);
 
   // Scroll to bottom when messages update
   useEffect(() => {
