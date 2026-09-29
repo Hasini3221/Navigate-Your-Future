@@ -42,6 +42,7 @@ import { SettingsView } from './components/SettingsView';
 import { TopicDetailModal } from './components/TopicDetailModal';
 import { ProjectDetailModal } from './components/ProjectDetailModal';
 import { ToastContainer } from './components/ToastContainer';
+import { ChatbotWidget } from './components/ChatbotWidget';
 import { ToastMessage } from './types';
 
 export default function App() {
@@ -685,6 +686,9 @@ export default function App() {
 
       {/* 4. Global Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
+      {/* 5. Live AI Career Chatbot Agent */}
+      <ChatbotWidget profile={profile} />
     </div>
   );
 }
